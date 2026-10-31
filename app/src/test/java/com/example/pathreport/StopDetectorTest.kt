@@ -12,14 +12,14 @@ class StopDetectorTest {
     private fun feed(detector: StopDetector, from: Long, to: Long, saved: List<Arrival> = emptyList()) {
         for (time in from..to step 1_000L) detector.accept(sample(time), time, saved)
     }
-    @Test fun requiresTwentySecondsAndKeepsStartTime() {
+    @Test fun requiresFiveSecondsAndKeepsStartTime() {
         val detector = StopDetector(trip)
-        feed(detector, 0, 19_000)
+        feed(detector, 0, 4_000)
         assertTrue(detector.pending(emptyList()).isEmpty())
-        detector.accept(sample(20_000), 20_000, emptyList())
+        detector.accept(sample(5_000), 5_000, emptyList())
         val arrival = detector.pending(emptyList()).single()
         assertEquals(trip.startedAt, arrival.estimatedAt)
-        assertEquals(trip.startedAt + 20_000, arrival.confirmedAt)
+        assertEquals(trip.startedAt + 5_000, arrival.confirmedAt)
     }
     @Test fun missingOrInvalidPlaceCoordinatesNeverConfirmOrBlockValidTargets() {
         for (invalid in listOf(place.copy(latitude = null), place.copy(longitude = null),
@@ -32,33 +32,33 @@ class StopDetectorTest {
     }
     @Test fun leavingAndReenteringRestartsDwell() {
         val detector = StopDetector(trip)
-        feed(detector, 0, 15_000)
-        detector.accept(sample(16_000, lat = 37.501), 16_000, emptyList())
-        feed(detector, 17_000, 36_000)
+        feed(detector, 0, 3_000)
+        detector.accept(sample(4_000, lat = 37.501), 4_000, emptyList())
+        feed(detector, 5_000, 9_000)
         assertTrue(detector.pending(emptyList()).isEmpty())
-        feed(detector, 37_000, 37_000)
-        assertEquals(trip.startedAt + 17_000, detector.pending(emptyList()).single().estimatedAt)
+        feed(detector, 10_000, 10_000)
+        assertEquals(trip.startedAt + 5_000, detector.pending(emptyList()).single().estimatedAt)
     }
     @Test fun badAccuracyAndInvalidFixesResetDwell() {
         for (accuracy in listOf(31.0, Double.NaN, -1.0, Double.POSITIVE_INFINITY)) {
             val detector = StopDetector(trip)
-            feed(detector, 0, 15_000)
-            detector.accept(sample(16_000, accuracy = accuracy), 16_000, emptyList())
-            feed(detector, 17_000, 36_000)
+            feed(detector, 0, 3_000)
+            detector.accept(sample(4_000, accuracy = accuracy), 4_000, emptyList())
+            feed(detector, 5_000, 9_000)
             assertTrue(detector.pending(emptyList()).isEmpty())
         }
         val detector = StopDetector(trip)
-        feed(detector, 0, 15_000)
-        detector.accept(sample(16_000, lat = Double.NaN), 16_000, emptyList())
+        feed(detector, 0, 3_000)
+        detector.accept(sample(4_000, lat = Double.NaN), 4_000, emptyList())
         assertEquals(0, detector.progressSeconds)
     }
     @Test fun gapsAndStaleFixesCannotConfirm() {
         val detector = StopDetector(trip)
-        feed(detector, 0, 15_000)
+        feed(detector, 0, 3_000)
         detector.accept(sample(21_000), 21_000, emptyList())
         assertTrue(detector.pending(emptyList()).isEmpty())
         assertEquals(0, detector.progressSeconds)
-        feed(detector, 22_000, 35_000)
+        feed(detector, 22_000, 24_000)
         detector.accept(sample(36_000), 42_000, emptyList())
         assertEquals(0, detector.progressSeconds)
         detector.accept(sample(44_000), 43_000, emptyList())
@@ -71,16 +71,16 @@ class StopDetectorTest {
         assertEquals(0, detector.progressSeconds)
         detector.tick(21_000)
         assertTrue(detector.pending(emptyList()).isEmpty())
-        feed(detector, 22_000, 41_000)
+        feed(detector, 22_000, 26_000)
         assertTrue(detector.pending(emptyList()).isEmpty())
     }
-    @Test fun fastMotionAndSlowDriftInsideRadiusDoNotCountAsStop() {
+    @Test fun fastMotionAndDriftBeyondAnchorDoNotCountAsStop() {
         val detector = StopDetector(trip)
         for (time in 0L..30_000L step 1_000L)
             detector.accept(sample(time, speed = 3.0), time, emptyList())
         assertTrue(detector.pending(emptyList()).isEmpty())
         for (time in 31_000L..61_000L step 1_000L)
-            detector.accept(sample(time, lat = 37.5 + (time - 31_000) / 1000.0 * 0.00001, speed = null), time, emptyList())
+            detector.accept(sample(time, lat = 37.5 + (time - 31_000) / 1000.0 * 0.00003, speed = null), time, emptyList())
         assertTrue(detector.pending(emptyList()).isEmpty())
     }
     @Test fun boundedJitterAndMissingSpeedCanStillConfirm() {
@@ -111,17 +111,17 @@ class StopDetectorTest {
     }
     @Test fun pauseAndClockCorrectionDoNotFinishEarly() {
         val detector = StopDetector(trip)
-        feed(detector, 0, 15_000)
+        feed(detector, 0, 3_000)
         detector.reset()
-        for (time in 16_000L..35_000L step 1_000L)
+        for (time in 4_000L..8_000L step 1_000L)
             detector.accept(sample(time).copy(wallTimeMs = trip.startedAt - 5000), time, emptyList())
         assertTrue(detector.pending(emptyList()).isEmpty())
-        detector.accept(sample(36_000).copy(wallTimeMs = trip.startedAt + 999_999), 36_000, emptyList())
+        detector.accept(sample(9_000).copy(wallTimeMs = trip.startedAt + 999_999), 9_000, emptyList())
         assertEquals(trip.startedAt, detector.pending(emptyList()).single().estimatedAt)
-        assertEquals(trip.startedAt + 20_000, detector.pending(emptyList()).single().confirmedAt)
+        assertEquals(trip.startedAt + 5_000, detector.pending(emptyList()).single().confirmedAt)
     }
     @Test fun storedRecordsValidateAndAreIdempotent() {
-        val arrival = Arrival("e", "p", trip.startedAt, trip.startedAt + 20_000)
+        val arrival = Arrival("e", "p", trip.startedAt, trip.startedAt + 5_000)
         val original = CareData(trips = listOf(trip))
         val saved = original.recordArrivals("t", listOf(arrival))
         assertEquals(saved, saved.recordArrivals("t", listOf(arrival)))
@@ -129,7 +129,7 @@ class StopDetectorTest {
         assertEquals(arrival.confirmedAt, ended.trips.single().endedAt)
         assertThrows(IllegalArgumentException::class.java) { ended.recordArrivals("t", listOf(arrival)) }
         assertThrows(IllegalArgumentException::class.java) { original.recordArrivals("t", listOf(arrival.copy(placeId = "wrong"))) }
-        assertThrows(IllegalArgumentException::class.java) { original.recordArrivals("t", listOf(arrival.copy(confirmedAt = trip.startedAt + 19_999))) }
+        assertThrows(IllegalArgumentException::class.java) { original.recordArrivals("t", listOf(arrival.copy(confirmedAt = trip.startedAt + 4_999))) }
         assertThrows(IllegalArgumentException::class.java) { trip.copy(arrivals = listOf(arrival, arrival)).validate() }
         val stopped = StopDetector(ended.trips.single())
         feed(stopped, 0, 30_000)

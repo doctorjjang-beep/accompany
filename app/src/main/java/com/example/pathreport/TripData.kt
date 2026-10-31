@@ -33,9 +33,13 @@ data class Trip(val id: String = UUID.randomUUID().toString(), val direction: Tr
         require(arrivals.map { it.elderId }.distinct().size == arrivals.size)
         arrivals.forEach { arrival ->
             require(targets.any { it.elderId == arrival.elderId && it.place.id == arrival.placeId })
-            require(arrival.source == "GPS_DWELL_20S")
+            val requiredDwellMs = when (arrival.source) {
+                "GPS_DWELL_20S" -> 20_000L // Preserve validation of historical records.
+                "GPS_DWELL_5S" -> 5_000L
+                else -> throw IllegalArgumentException("알 수 없는 도착 기록 방식입니다.")
+            }
             require(arrival.estimatedAt >= startedAt && arrival.confirmedAt >= arrival.estimatedAt)
-            require(arrival.confirmedAt - arrival.estimatedAt >= StopPolicy.DWELL_MS)
+            require(arrival.confirmedAt - arrival.estimatedAt >= requiredDwellMs)
             require(endedAt == null || arrival.confirmedAt <= endedAt)
         }
         require(targets.groupBy { it.place.id }.values.all { group -> group.map { it.place }.distinct().size == 1 })

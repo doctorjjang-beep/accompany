@@ -2,6 +2,7 @@ package com.example.pathreport
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
@@ -34,7 +35,7 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
         CareTabs(listOf("GPS 운행 기록", "운행 내역"), selectedTab) { selectedTab = it }
         if (selectedTab == 0) {
             Text("GPS 운행 기록", style = MaterialTheme.typography.titleLarge)
-            Text("등록 장소 50m 이내에서 연속 20초 정차하면 도착을 추정합니다. 위치 오차가 30m 이하여야 합니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("등록 장소 50m 이내에서 연속 ${StopPolicy.DWELL_MS / 1000}초 정차하면 도착을 추정합니다. 위치 오차가 30m 이하여야 합니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (active == null) {
                 TripStartTiles(enabled = !busy) { selecting = it }
             } else {
@@ -42,8 +43,6 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                     Text("${active.direction.label} 운행 진행 중", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                     Text("시작: ${tripTime(active.startedAt)} · 대상 ${active.targets.size}명")
                     Text(tracking.message)
-                    Text("장소 판정 반경 ${StopPolicy.RADIUS_METERS.toInt()}m · 현재 GPS 오차 ${tracking.accuracyMeters?.let { "약 ${it}m" } ?: if (!tracking.serviceAlive) "감지 중지" else "수신 대기"}")
-                    Text("GPS 오차 허용 기준: ${StopPolicy.MAX_ACCURACY_METERS.toInt()}m 이하", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("기록 완료 ${active.arrivals.size}명 · 미기록 ${active.targets.size - active.arrivals.size}명")
                     if (tracking.pending.isNotEmpty()) Text("저장 대기 ${tracking.pending.size}명 · 저장 실패 시 자동으로 다시 시도합니다.")
                     if (tracking.phase != TrackingPhase.COMPLETE && tracking.phase != TrackingPhase.ENDING && (tracking.needsPermission || !tracking.serviceAlive))
@@ -54,10 +53,18 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                         Text("운행 알림이 꺼져 있습니다. 감지 상태를 알림에서 보려면 허용해 주세요.")
                         TextButton(enabled = !busy, onClick = requestNotifications) { Text("운행 알림 허용·설정") }
                     }
-                    Text("운행 감지 서비스는 화면 꺼짐·앱 잠금 상태에서도 동작합니다. 감지가 중단되면 앱에서 재개해 주세요.")
                     TextButton(enabled = !busy, onClick = { detailId = active.id }) { Text("대상·장소 확인") }
                     Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp), enabled = !busy, onClick = { ending = active.id }) { Text("운행 종료") }
                 } }
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("장소 판정 반경 ${StopPolicy.RADIUS_METERS.toInt()}m · 현재 GPS 오차 ${tracking.accuracyMeters?.let { "약 ${it}m" } ?: if (!tracking.serviceAlive) "감지 중지" else "수신 대기"}")
+                    Text("GPS 오차 허용 기준: ${StopPolicy.MAX_ACCURACY_METERS.toInt()}m 이하", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                    Text("운행 감지 서비스는 화면 꺼짐·앱 잠금 상태에서도 동작합니다. 감지가 중단되면 앱에서 재개해 주세요.")
+                }
             }
         } else {
             val completedTrips = data.trips.filter { it.endedAt != null }.sortedByDescending { it.startedAt }
@@ -161,47 +168,101 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
 private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirection, dismiss: () -> Unit,
     start: (TripDirection, Map<String, String>) -> Unit) {
     var choices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var showPrivacy by remember { mutableStateOf(false) }
     val eligible = data.elders.associate { elder -> elder.id to data.places.filter { p ->
         p.latitude != null && p.longitude != null && PlaceElder(p.id, elder.id) in data.links
     } }
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("${direction.label} 운행 대상·장소 선택") }, text = {
-        Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-            Text("운행에 포함할 어르신을 선택해 주세요. 연결 장소가 여러 곳이면 장소를 선택해 주세요.")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = !busy && eligible.any { (id, places) -> places.isNotEmpty() && id !in choices },
-                    onClick = {
-                        choices = eligible.filterValues { it.isNotEmpty() }.mapValues { (id, places) ->
-                            choices[id]?.takeIf { selected -> places.any { it.id == selected } } ?: places.first().id
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { if (!busy) dismiss() },
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn
+        )
+    ) {
+        Surface(
+            modifier = Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("운행 준비", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("${direction.label} 운행 대상·장소 선택", style = MaterialTheme.typography.titleLarge)
+                Text("운행에 포함할 어르신을 선택해 주세요.", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(enabled = !busy && eligible.any { (id, places) -> places.isNotEmpty() && id !in choices },
+                        onClick = {
+                            choices = eligible.filterValues { it.isNotEmpty() }.mapValues { (id, places) ->
+                                choices[id]?.takeIf { selected -> places.any { it.id == selected } } ?: places.first().id
+                            }
+                        }) { Text("전체선택") }
+                    TextButton(enabled = !busy && choices.isNotEmpty(), onClick = { choices = emptyMap() }) {
+                        Text("전체선택 해제")
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("선택 가능 ${eligible.count { it.value.isNotEmpty() }}명",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (data.elders.isEmpty()) Text("어르신을 등록한 뒤 좌표가 있는 장소와 연결해 주세요.")
+                    data.elders.sortedByKoreanName { it.name }.forEach { elder ->
+                        val places = eligible.getValue(elder.id)
+                        val selected = elder.id in choices
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.background
+                        ) {
+                            Column {
+                                Row(Modifier.fillMaxWidth().toggleable(value = selected,
+                                    enabled = !busy && places.isNotEmpty(), role = Role.Checkbox,
+                                    onValueChange = { checked -> choices = if (checked) choices + (elder.id to places.first().id) else choices - elder.id })
+                                    .padding(horizontal = 8.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(enabled = !busy && places.isNotEmpty(), checked = selected, onCheckedChange = null)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text("${elder.name} 어르신", style = MaterialTheme.typography.titleMedium)
+                                        if (places.size != 1) Text(when {
+                                            places.isEmpty() -> "좌표가 있는 연결 장소가 없어 선택할 수 없어요."
+                                            selected -> "아래에서 운행 장소를 확인해 주세요."
+                                            else -> "연결 장소 ${places.size}곳"
+                                        }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (selected && places.size > 1) {
+                                    Column(Modifier.padding(start = 16.dp, end = 12.dp, bottom = 12.dp)
+                                        .then(Modifier.selectableGroup())) {
+                                        places.sortedByKoreanName { it.name }.forEach { place ->
+                                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                                .selectable(selected = choices[elder.id] == place.id, enabled = !busy,
+                                                    role = Role.RadioButton, onClick = { choices = choices + (elder.id to place.id) }),
+                                                verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(selected = choices[elder.id] == place.id, enabled = !busy, onClick = null)
+                                                Text(place.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    }) { Text("전체선택") }
-                TextButton(enabled = !busy && choices.isNotEmpty(), onClick = { choices = emptyMap() }) {
-                    Text("전체선택 해제")
+                    }
+                    TextButton(onClick = { showPrivacy = !showPrivacy }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (showPrivacy) "운행 기록 및 개인정보 안내 접기" else "운행 기록 및 개인정보 안내 펼치기")
+                    }
+                    if (showPrivacy) Text(
+                        "시작 시 대상과 장소를 고정하여 암호화 저장합니다. 정확한 위치 권한을 허용하면 대상 장소의 도착을 감지하여 기록합니다. 화면을 꺼도 기록하며 운행 종료를 누르면 멈춥니다. GPS 도착 추정은 실제 승하차 확인이 아닙니다.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-            if (data.elders.isEmpty()) Text("어르신을 등록한 뒤 좌표가 있는 장소와 연결해 주세요.")
-            data.elders.sortedByKoreanName { it.name }.forEachIndexed { index, elder ->
-                val places = eligible.getValue(elder.id)
-                Row(Modifier.fillMaxWidth().toggleable(value = elder.id in choices,
-                    enabled = !busy && places.isNotEmpty(), role = Role.Checkbox,
-                    onValueChange = { checked -> choices = if (checked) choices + (elder.id to places.first().id) else choices - elder.id }),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(enabled = !busy && places.isNotEmpty(), checked = elder.id in choices, onCheckedChange = null)
-                    Text("${index + 1}. ${elder.name}", Modifier.weight(1f))
-                }
-                if (places.isEmpty()) Text("좌표가 등록된 연결 장소가 없습니다.")
-                if (elder.id in choices && places.size > 1) places.sortedByKoreanName { it.name }.forEach { place ->
-                    Row(Modifier.fillMaxWidth().selectable(selected = choices[elder.id] == place.id,
-                        enabled = !busy, role = Role.RadioButton,
-                        onClick = { choices = choices + (elder.id to place.id) }), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = choices[elder.id] == place.id, enabled = !busy, onClick = null)
-                        Text(place.name, Modifier.weight(1f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("선택 ${choices.size}명 · ${direction.label}", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(enabled = !busy, onClick = dismiss) { Text("취소") }
+                    Button(modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp),
+                        enabled = !busy && choices.isNotEmpty(), onClick = { start(direction, choices) }) {
+                        Text(if (busy) "저장 중…" else "${choices.size}명으로 ${direction.label} 시작")
                     }
                 }
             }
-            Text("선택 ${choices.size}명 · ${direction.label}\n시작 시 대상과 장소를 고정하여 암호화 저장합니다. 정확한 위치 권한을 허용하면 대상 장소의 도착을 감지하여 기록합니다. 화면을 꺼도 기록하며 운행 종료를 누르면 멈춥니다.")
         }
-    }, confirmButton = { TextButton(enabled = !busy && choices.isNotEmpty(), onClick = { start(direction, choices) }) { Text("선택한 대상으로 시작") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = dismiss) { Text("취소") } })
+    }
 }
-
