@@ -7,12 +7,12 @@ data class GpsSample(val latitude: Double, val longitude: Double, val accuracyMe
     val elapsedMs: Long, val wallTimeMs: Long, val speedMetersPerSecond: Double? = null)
 
 data class Arrival(val elderId: String, val placeId: String, val estimatedAt: Long,
-    val confirmedAt: Long, val source: String = "GPS_DWELL_20S")
+    val confirmedAt: Long, val source: String = "GPS_DWELL_5S")
 
 object StopPolicy {
     const val RADIUS_METERS = 50.0
     const val MAX_ACCURACY_METERS = 30.0
-    const val DWELL_MS = 20_000L
+    const val DWELL_MS = 5_000L
     const val MAX_GAP_MS = 5_000L
     const val MAX_SPEED_MPS = 1.5
     const val ANCHOR_RADIUS_METERS = 10.0
@@ -91,7 +91,7 @@ class StopDetector(private val trip: Trip) {
                 candidates[place.id] = candidate
             }
             val duration = sample.elapsedMs - candidate.anchor.elapsedMs
-            progressSeconds = maxOf(progressSeconds, (duration / 1000).coerceAtMost(20).toInt())
+            progressSeconds = maxOf(progressSeconds, (duration / 1000).coerceAtMost(StopPolicy.DWELL_MS / 1000).toInt())
             if (duration >= StopPolicy.DWELL_MS) {
                 // Derive confirmation from monotonic duration so wall-clock corrections do not reverse time.
                 val confirmedAt = candidate.estimatedAt + duration
@@ -104,7 +104,7 @@ class StopDetector(private val trip: Trip) {
         message = when {
             ready.isNotEmpty() -> "도착 추정 기록을 저장하고 있습니다."
             remaining.isEmpty() -> "모든 대상의 도착 추정 기록을 저장했습니다."
-            candidates.isNotEmpty() -> "정차 확인 ${progressSeconds}/20초"
+            candidates.isNotEmpty() -> "정차 확인 ${progressSeconds}/${StopPolicy.DWELL_MS / 1000}초"
             else -> "등록 장소 반경 50m 안에서 정차를 기다립니다."
         }
     }

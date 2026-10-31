@@ -270,19 +270,13 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
         if (current == null) {
             if (!busy) Button(onClick = { reload++ }) { Text("자료 열기 다시 시도") }
         } else if (rows != null) {
-            Text(if (editing) "장소 수정" else "장소 한 번에 등록", style = MaterialTheme.typography.titleLarge)
-            Row {
-                TextButton(enabled = !busy, onClick = { drafts = null; review = false }) { Text("취소") }
-                if (!editing) TextButton(enabled = !busy, onClick = { drafts = rows + PlaceDraft() }) { Text("다른 주소 추가") }
-                Button(enabled = !busy, onClick = { showErrors = true; if (rows.all { it.error() == null }) review = true }) { Text("저장") }
-            }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                rows.forEachIndexed { index, row -> key(row.id) {
-                    PlaceRow(row, index + 1, current.elders, !busy, showErrors,
-                        update = { changed -> drafts = drafts?.map { if (it.id == row.id) changed else it } },
-                        remove = if (!editing && rows.size > 1) ({ drafts = drafts?.filterNot { it.id == row.id } }) else null)
-                } }
-            }
+            PlaceWizard(rows, current.elders, editing, busy, showErrors,
+                update = { changed -> drafts = drafts?.map { if (it.id == changed.id) changed else it } },
+                add = { drafts = rows + PlaceDraft() },
+                remove = { id -> drafts = drafts?.filterNot { it.id == id } },
+                cancel = { drafts = null; review = false },
+                save = { showErrors = true; if (rows.all { it.error() == null }) review = true },
+                modifier = Modifier.weight(1f))
             if (review) AlertDialog(onDismissRequest = { if (!busy) review = false }, title = { Text("저장할 장소 확인") },
                 text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     rows.forEachIndexed { i, row -> Text("${i + 1}. ${row.name}\n위도 ${row.lat} / 경도 ${row.lon}\n연결 어르신 ${row.elderIds.size}명\n") }
@@ -409,8 +403,40 @@ private fun ElderDialog(elder: Elder, data: CareData, busy: Boolean, dismiss: ()
 }
 
 @Composable
+private fun PlaceWizard(rows: List<PlaceDraft>, elders: List<Elder>, editing: Boolean, busy: Boolean,
+    showErrors: Boolean, update: (PlaceDraft) -> Unit, add: () -> Unit, remove: (String) -> Unit,
+    cancel: () -> Unit, save: () -> Unit, modifier: Modifier = Modifier) {
+    var selectedId by remember(rows.first().id) { mutableStateOf(rows.last().id) }
+    LaunchedEffect(rows.size) { if (rows.none { it.id == selectedId }) selectedId = rows.last().id }
+    val index = rows.indexOfFirst { it.id == selectedId }.takeIf { it >= 0 } ?: rows.lastIndex
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(if (editing) "장소 수정" else "승하차 장소 등록", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            TextButton(enabled = !busy, onClick = cancel) { Text("취소") }
+        }
+        if (rows.size > 1) Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(enabled = !busy && index > 0, onClick = { selectedId = rows[index - 1].id }) { Text("이전 장소") }
+            Text("${index + 1} / ${rows.size}곳", Modifier.weight(1f))
+            TextButton(enabled = !busy && index < rows.lastIndex, onClick = { selectedId = rows[index + 1].id }) { Text("다음 장소") }
+        }
+        key(rows[index].id) {
+            PlaceRow(rows[index], index + 1, elders, !busy, showErrors, update,
+                remove = if (!editing && rows.size > 1) ({ remove(rows[index].id) }) else null,
+                modifier = Modifier.weight(1f), count = rows.size,
+                add = if (!editing) ({ add(); selectedId = "" }) else null,
+                save = {
+                    val invalid = rows.firstOrNull { it.error() != null }
+                    if (invalid != null) selectedId = invalid.id
+                    save()
+                })
+        }
+    }
+}
+
+@Composable
 private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: Boolean, showErrors: Boolean,
-    update: (PlaceDraft) -> Unit, remove: (() -> Unit)?) {
+    update: (PlaceDraft) -> Unit, remove: (() -> Unit)?, modifier: Modifier, count: Int,
+    add: (() -> Unit)?, save: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val latest by rememberUpdatedState(row)
@@ -443,15 +469,27 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
         if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) locate()
         else feedback = "정확한 위치 권한이 필요합니다. 기기 앱 설정에서 허용하거나 지도에서 위치를 선택해 주세요."
     }
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(placeOrdinalLabel(index), style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(row.name, { update(row.copy(name = it)) }, enabled = enabled && !working, label = { Text("장소 이름") }, modifier = Modifier.fillMaxWidth())
+    var step by remember { mutableStateOf(1) }
+    var showPrivacy by remember { mutableStateOf(false) }
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val selection = row.lat.toDoubleOrNull()?.let { lat ->
+        row.lon.toDoubleOrNull()?.takeIf { inKoreaMap(lat, it) }?.let { lat to it }
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("${placeOrdinalLabel(index)} · ${if (step == 1) "1 / 2 위치 선택" else "2 / 2 이름·어르신 연결"}",
+            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        if (step == 1) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+        val controlsHeight = maxHeight * 0.45f
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = controlsHeight).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedTextField(row.address, {
             results = emptyList(); feedback = ""; update(row.copy(address = it, lat = "", lon = ""))
         }, enabled = enabled && !working, label = { Text("주소 검색") }, modifier = Modifier.fillMaxWidth())
-        Text("검색하신 주소는 외부 주소 검색 서비스로 전달되며 지도 초기위치를 설정하는데만 사용합니다. 앱에는 주소를 좌표형태로 변환하여 저장합니다. 실제거주지의 정확한 위치 대신 승하차 장소 (예)주변 도로 위 로 지정하는 것이 권장됩니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row {
-            TextButton(enabled = enabled && !working && row.address.isNotBlank(), onClick = {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = enabled && !working && row.address.isNotBlank(), onClick = {
+                focus.clearFocus()
                 val query = row.address.trim()
                 scope.launch {
                     working = true; feedback = "주소 검색 중…"; results = emptyList()
@@ -464,20 +502,20 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
                     finally { working = false }
                 }
             }) { Text("주소 검색") }
-            TextButton(enabled = enabled && !working, onClick = { permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("현재 GPS 위치") }
+            OutlinedButton(enabled = enabled && !working, onClick = { permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("현재 GPS 위치") }
         }
+        OutlinedButton(onClick = { showPrivacy = !showPrivacy }) { Text(if (showPrivacy) "개인정보 안내 접기" else "개인정보 안내 펼치기") }
+        if (showPrivacy) Text("검색 주소는 저장하지 않습니다. 실제거주지의 정확한 위치 대신 승하차 장소 (예)주변 도로 위 로 지정하는 것이 권장됩니다.", style = MaterialTheme.typography.bodySmall)
         if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (feedback.isNotEmpty()) Text(feedback)
         results.forEach { result -> OutlinedButton(enabled = enabled && !working, onClick = {
+            focus.clearFocus()
             update(latest.copy(address = result.address, lat = result.lat.toString(), lon = result.lon.toString()))
             results = emptyList(); feedback = "선택한 주소에 핀을 놓았습니다. 핀을 끌어서 정확한 위치로 조정해 주세요."
         }, modifier = Modifier.fillMaxWidth()) { Text(result.address) } }
-        Text("지도에서 위치 확인", style = MaterialTheme.typography.titleSmall)
-        Text("주소를 선택하면 지도가 이동합니다. 핀을 끌거나 지도를 눌러 승하차 위치를 조정해 주세요.", style = MaterialTheme.typography.bodySmall)
-        val selection = row.lat.toDoubleOrNull()?.let { lat ->
-            row.lon.toDoubleOrNull()?.takeIf { inKoreaMap(lat, it) }?.let { lat to it }
         }
-        CareMapView(Modifier.fillMaxWidth().height(320.dp),
+        Text("핀을 끌거나 지도를 눌러 승하차 위치를 조정해 주세요.", style = MaterialTheme.typography.bodySmall)
+        CareMapView(Modifier.fillMaxWidth().weight(1f),
             selection = selection, interactive = enabled && !working,
             onPick = { lat, lon ->
                 update(latest.copy(lat = lat.toString(), lon = lon.toString()))
@@ -486,6 +524,16 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
             })
         Text(if (selection == null) "지도에 핀을 놓아 위치를 선택해 주세요." else "선택한 핀 위치가 장소의 좌표로 저장됩니다.",
             style = MaterialTheme.typography.bodySmall)
+        }
+        }
+        Button(enabled = enabled && !working && selection != null,
+            onClick = { focus.clearFocus(); step = 2 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            Text("이 위치로 다음")
+        }
+        } else {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(row.name, { update(row.copy(name = it)) }, enabled = enabled && !working,
+            label = { Text("장소 이름") }, modifier = Modifier.fillMaxWidth())
         Text("연결할 어르신 (여러 명 선택 가능)")
         if (elders.isEmpty()) Text("어르신 탭에서 등록 후 연결할 수 있습니다.")
         elders.sortedByKoreanName { it.name }.forEach { elder -> Row {
@@ -494,8 +542,16 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
             }); Text(elder.name, Modifier.padding(top = 12.dp))
         } }
         if (showErrors) row.error()?.let { Text("${index}행 오류: $it", color = MaterialTheme.colorScheme.error) }
-        if (remove != null) TextButton(enabled = enabled && !working, onClick = remove) { Text("이 입력 행 제거") }
-    } }
+        if (remove != null) TextButton(enabled = enabled && !working, onClick = remove) { Text("이 장소 입력 제거") }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(enabled = enabled && !working, onClick = { focus.clearFocus(); step = 1 }) { Text("이전") }
+            if (add != null) TextButton(enabled = enabled && !working && row.error() == null, onClick = { focus.clearFocus(); add() }) { Text("다른 장소 추가") }
+            Button(enabled = enabled && !working && row.error() == null, onClick = { focus.clearFocus(); save() },
+                modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(if (count > 1) "${count}곳 저장" else "저장") }
+        }
+        }
+    }
 }
 
 private fun placeOrdinalLabel(index: Int): String {
