@@ -366,7 +366,7 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
     }
     val current = data
     if (current != null) {
-        elderEditor?.let { elder -> ElderDialog(elder, current, busy, dismiss = { elderEditor = null }, save = { name, ids ->
+        elderEditor?.let { elder -> ElderEditor(elder, current, busy, message = message, dismiss = { elderEditor = null }, save = { name, ids ->
             persist({ latest -> latest.copy(elders = latest.elders.filterNot { it.id == elder.id } + elder.copy(name = name),
                 links = latest.links.filterNot { it.elderId == elder.id } + ids.map { PlaceElder(it, elder.id) }) }) { elderEditor = null }
         }) }
@@ -381,24 +381,6 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
 private fun ConfirmDelete(title: String, body: String, busy: Boolean, dismiss: () -> Unit, confirm: () -> Unit) {
     AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text(title) }, text = { Text(body) },
         confirmButton = { TextButton(enabled = !busy, onClick = confirm) { Text("삭제") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = dismiss) { Text("취소") } })
-}
-
-@Composable
-private fun ElderDialog(elder: Elder, data: CareData, busy: Boolean, dismiss: () -> Unit, save: (String, Set<String>) -> Unit) {
-    var name by remember(elder.id) { mutableStateOf(elder.name) }
-    var ids by remember(elder.id) { mutableStateOf(data.links.filter { it.elderId == elder.id }.map { it.placeId }.toSet()) }
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("어르신 등록·수정") }, text = {
-        Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-            OutlinedTextField(value = name, onValueChange = { name = it }, enabled = !busy, label = { Text("어르신 이름") }, singleLine = true)
-            Text("연결 장소 선택 (여러 곳 선택 가능)")
-            if (data.places.isEmpty()) Text("장소 등록 후 연결할 수 있습니다.")
-            data.places.sortedByKoreanName { it.name }.forEach { p -> Row {
-                Checkbox(enabled = !busy, checked = p.id in ids, onCheckedChange = { ids = if (it) ids + p.id else ids - p.id }); Text(p.name, Modifier.padding(top = 12.dp))
-            } }
-            Text("동명이인은 별도 ID로 저장됩니다.")
-        }
-    }, confirmButton = { TextButton(enabled = name.isNotBlank() && !busy, onClick = { save(name.trim(), ids) }) { Text("저장") } },
         dismissButton = { TextButton(enabled = !busy, onClick = dismiss) { Text("취소") } })
 }
 
