@@ -31,11 +31,10 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
     var detailId by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<Pair<String, String?>?>(null) }
     val active = data.trips.singleOrNull { it.endedAt == null }
+    var trackingDetailsExpanded by rememberSaveable(active?.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         CareTabs(listOf("GPS 운행 기록", "운행 내역"), selectedTab) { selectedTab = it }
         if (selectedTab == 0) {
-            Text("GPS 운행 기록", style = MaterialTheme.typography.titleLarge)
-            Text("등록 장소 50m 이내에서 연속 ${StopPolicy.DWELL_MS / 1000}초 정차하면 도착을 추정합니다. 위치 오차가 30m 이하여야 합니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (active == null) {
                 TripStartTiles(enabled = !busy) { selecting = it }
             } else {
@@ -60,10 +59,18 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("장소 판정 반경 ${StopPolicy.RADIUS_METERS.toInt()}m · 현재 GPS 오차 ${tracking.accuracyMeters?.let { "약 ${it}m" } ?: if (!tracking.serviceAlive) "감지 중지" else "수신 대기"}")
-                    Text("GPS 오차 허용 기준: ${StopPolicy.MAX_ACCURACY_METERS.toInt()}m 이하", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    Text("운행 감지 서비스는 화면 꺼짐·앱 잠금 상태에서도 동작합니다. 감지가 중단되면 앱에서 재개해 주세요.")
+                    TextButton(
+                        onClick = { trackingDetailsExpanded = !trackingDetailsExpanded },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(if (trackingDetailsExpanded) "운행 감지 안내 접기 ▲" else "운행 감지 안내 펼치기 ▼")
+                    }
+                    if (trackingDetailsExpanded) {
+                        Text("장소 판정 반경 ${StopPolicy.RADIUS_METERS.toInt()}m · 현재 GPS 오차 ${tracking.accuracyMeters?.let { "약 ${it}m" } ?: if (!tracking.serviceAlive) "감지 중지" else "수신 대기"}")
+                        Text("GPS 오차 허용 기준: ${StopPolicy.MAX_ACCURACY_METERS.toInt()}m 이하", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text("운행 감지 서비스는 화면 꺼짐·앱 잠금 상태에서도 동작합니다. 감지가 중단되면 앱에서 재개해 주세요.")
+                    }
                 }
             }
         } else {
