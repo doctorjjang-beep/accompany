@@ -79,7 +79,6 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
             val headingFormat = SimpleDateFormat("yy.MM.dd일", Locale.KOREA)
             val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.KOREA)
             val tripsByDate = completedTrips.groupBy { dayFormat.format(Date(it.startedAt)) }
-            Text("운행 내역", style = MaterialTheme.typography.titleLarge)
             Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp), enabled = !busy && !exporting && completedTrips.isNotEmpty(), onClick = { choosingExportDates = true }) {
                 Text(if (exporting) "엑셀 저장 중…" else "엑셀로 저장 (.xlsx)")
             }
@@ -176,9 +175,8 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
     start: (TripDirection, Map<String, String>) -> Unit) {
     var choices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showPrivacy by remember { mutableStateOf(false) }
-    val eligible = data.elders.associate { elder -> elder.id to data.places.filter { p ->
-        p.latitude != null && p.longitude != null && PlaceElder(p.id, elder.id) in data.links
-    } }
+    val eligible = data.eligibleTripPlaces()
+    LaunchedEffect(eligible) { choices = data.addTripMembers(choices, emptyList()) }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = { if (!busy) dismiss() },
         properties = androidx.compose.ui.window.DialogProperties(
@@ -209,6 +207,25 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
                 }
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (data.groups.isNotEmpty()) {
+                        Text("그룹별 빠른 선택", style = MaterialTheme.typography.titleMedium)
+                        Text("그룹을 누르면 구성원이 추가됩니다. 중복 없이 선택되며, 아래에서 개별 변경할 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall)
+                        data.groups.sortedByKoreanName { it.name }.forEach { group ->
+                            val available = group.elderIds.filter { !eligible[it].isNullOrEmpty() }
+                            val selectedAll = available.isNotEmpty() && available.all { it in choices }
+                            OutlinedButton(modifier = Modifier.fillMaxWidth(),
+                                enabled = !busy && available.isNotEmpty() && !selectedAll,
+                                onClick = { choices = data.addTripMembers(choices, group.elderIds) }) {
+                                Text("${group.name} · ${available.size}명 ${if (selectedAll) "선택됨" else "선택"}")
+                            }
+                            val skipped = group.elderIds.size - available.size
+                            if (skipped > 0) Text("${group.name}: 연결 장소의 좌표가 없는 ${skipped}명 제외",
+                                style = MaterialTheme.typography.bodySmall)
+                            if (group.elderIds.isEmpty()) Text("구성원이 없는 그룹입니다.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        HorizontalDivider()
+                    }
                     Text("선택 가능 ${eligible.count { it.value.isNotEmpty() }}명",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (data.elders.isEmpty()) Text("어르신을 등록한 뒤 좌표가 있는 장소와 연결해 주세요.")

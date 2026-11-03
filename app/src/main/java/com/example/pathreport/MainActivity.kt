@@ -328,32 +328,9 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
                         }
                     } }
                 } else {
-                    if (current.elders.isEmpty()) Text("등록된 어르신이 없습니다. 어르신을 추가하고 장소를 연결해 주세요.")
-                    current.elders.sortedByKoreanName { it.name }.forEach { elder -> Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            CareSymbol(R.drawable.ic_people)
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    androidx.compose.ui.text.buildAnnotatedString {
-                                        append(elder.name)
-                                        append(" ")
-                                        pushStyle(androidx.compose.ui.text.SpanStyle(
-                                            color = androidx.compose.ui.graphics.Color(0xFF8E8E93),
-                                            fontSize = 14.sp, fontWeight = FontWeight.Normal
-                                        ))
-                                        append("어르신")
-                                        pop()
-                                    },
-                                    style = MaterialTheme.typography.titleMedium, fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text("연결 장소: " + current.links.filter { it.elderId == elder.id }.mapNotNull { link -> current.places.find { it.id == link.placeId }?.name }.joinToString(", ").ifEmpty { "없음" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            PlaceCardActions(enabled = !busy, edit = { elderEditor = elder }, delete = { deleteElder = elder },
-                                editDescription = "수정 · 장소 연결", deleteDescription = "어르신 삭제", compact = true, horizontal = true)
-                        }
-                    } }
+                    ElderGroupsPanel(current, busy, message,
+                        editElder = { elderEditor = it }, deleteElder = { deleteElder = it },
+                        save = { change, done -> persist(change, done = done) })
                 }
             }
         }
@@ -452,7 +429,6 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
         else feedback = "정확한 위치 권한이 필요합니다. 기기 앱 설정에서 허용하거나 지도에서 위치를 선택해 주세요."
     }
     var step by remember { mutableStateOf(1) }
-    var showPrivacy by remember { mutableStateOf(false) }
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     val selection = row.lat.toDoubleOrNull()?.let { lat ->
         row.lon.toDoubleOrNull()?.takeIf { inKoreaMap(lat, it) }?.let { lat to it }
@@ -486,8 +462,6 @@ private fun PlaceRow(row: PlaceDraft, index: Int, elders: List<Elder>, enabled: 
             }) { Text("주소 검색") }
             OutlinedButton(enabled = enabled && !working, onClick = { permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("현재 GPS 위치") }
         }
-        OutlinedButton(onClick = { showPrivacy = !showPrivacy }) { Text(if (showPrivacy) "개인정보 안내 접기" else "개인정보 안내 펼치기") }
-        if (showPrivacy) Text("검색 주소는 저장하지 않습니다. 실제거주지의 정확한 위치 대신 승하차 장소 (예)주변 도로 위 로 지정하는 것이 권장됩니다.", style = MaterialTheme.typography.bodySmall)
         if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (feedback.isNotEmpty()) Text(feedback)
         results.forEach { result -> OutlinedButton(enabled = enabled && !working, onClick = {
