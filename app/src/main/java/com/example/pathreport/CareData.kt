@@ -9,8 +9,12 @@ data class StopPlace(val id: String = UUID.randomUUID().toString(), val name: St
 data class Elder(val id: String = UUID.randomUUID().toString(), val name: String)
 data class PlaceElder(val placeId: String, val elderId: String)
 data class CareData(val places: List<StopPlace> = emptyList(), val elders: List<Elder> = emptyList(),
-    val links: List<PlaceElder> = emptyList(), val legacyDigest: String? = null, val trips: List<Trip> = emptyList()) {
+    val links: List<PlaceElder> = emptyList(), val legacyDigest: String? = null, val trips: List<Trip> = emptyList(),
+    val groups: List<ElderGroup> = emptyList()) {
     fun validate() {
+        require(groups.map { it.id }.distinct().size == groups.size)
+        require(groups.all { group -> group.id.isNotBlank() && group.name.isNotBlank() &&
+            group.elderIds.distinct().size == group.elderIds.size && group.elderIds.all { id -> elders.any { it.id == id } } })
         require(places.map { it.id }.distinct().size == places.size)
         require(elders.map { it.id }.distinct().size == elders.size)
         require(places.all { it.id.isNotBlank() && it.name.isNotBlank() && validCoordinates(it.latitude, it.longitude) })
@@ -22,7 +26,8 @@ data class CareData(val places: List<StopPlace> = emptyList(), val elders: List<
         require(links.all { link -> places.any { it.id == link.placeId } && elders.any { it.id == link.elderId } })
     }
     fun withoutPlace(id: String) = copy(places = places.filterNot { it.id == id }, links = links.filterNot { it.placeId == id })
-    fun withoutElder(id: String) = copy(elders = elders.filterNot { it.id == id }, links = links.filterNot { it.elderId == id })
+    fun withoutElder(id: String) = copy(elders = elders.filterNot { it.id == id }, links = links.filterNot { it.elderId == id },
+        groups = groups.map { it.copy(elderIds = it.elderIds.filterNot { member -> member == id }) })
 }
 
 fun validCoordinates(lat: Double?, lon: Double?): Boolean =
@@ -46,8 +51,10 @@ fun migrateLegacyItems(data: CareData, entries: List<LegacyPerson>, digest: Stri
 object CareCodec {
     fun encode(data: CareData): ByteArray {
         data.validate()
-        return JSONObject().put("version", 6).put("legacyDigest", data.legacyDigest)
+        return JSONObject().put("version", 7).put("legacyDigest", data.legacyDigest)
             .put("trips", TripCodec.encode(data.trips))
+            .put("groups", JSONArray().apply { data.groups.forEach { put(JSONObject()
+                .put("id", it.id).put("name", it.name).put("elders", JSONArray(it.elderIds))) } })
             .put("places", JSONArray().apply { data.places.forEach { p -> put(JSONObject()
                 .put("id", p.id).put("name", p.name)
                 .put("lat", p.latitude).put("lon", p.longitude)) } })
@@ -58,7 +65,7 @@ object CareCodec {
     fun decode(bytes: ByteArray): CareData {
         val root = JSONObject(bytes.toString(Charsets.UTF_8))
         val version = root.getInt("version")
-        require(version in 1..6)
+        require(version in 1..7)
         val p = root.getJSONArray("places"); val e = root.getJSONArray("elders"); val l = root.getJSONArray("links")
         return CareData(List(p.length()) { i -> p.getJSONObject(i).let {
             StopPlace(it.getString("id"), it.getString("name"), it.optString("address", ""),
@@ -66,7 +73,13 @@ object CareCodec {
         } }, List(e.length()) { i -> e.getJSONObject(i).let { Elder(it.getString("id"), it.getString("name")) } },
             List(l.length()) { i -> l.getJSONObject(i).let { PlaceElder(it.getString("place"), it.getString("elder")) } },
             if (root.isNull("legacyDigest")) null else root.getString("legacyDigest"),
-            if (version == 1) emptyList() else TripCodec.decode(root.getJSONArray("trips"), version)).also { it.validate() }
+            if (version == 1) emptyList() else TripCodec.decode(root.getJSONArray("trips"), version),
+            if (version < 7) emptyList() else root.getJSONArray("groups").let { groups ->
+                List(groups.length()) { i -> groups.getJSONObject(i).let { group ->
+                    val members = group.getJSONArray("elders")
+                    ElderGroup(group.getString("id"), group.getString("name"), List(members.length()) { members.getString(it) })
+                } }
+            }).also { it.validate() }
     }
 }
 
