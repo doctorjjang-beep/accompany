@@ -33,3 +33,11 @@ internal fun CareData.addTripMembers(choices: Map<String, String>, memberIds: Li
     }
     return result
 }
+
+/** Apply only the requested membership delta to the latest saved group. */
+internal fun CareData.changeGroupMembers(groupId: String, elderIds: Set<String>, adding: Boolean): CareData {
+    val group = groups.single { it.id == groupId }
+    val validIds = elderIds.intersect(elders.map { it.id }.toSet())
+    val members = if (adding) (group.elderIds + validIds).distinct() else group.elderIds.filterNot { it in validIds }
+    return copy(groups = groups.map { if (it.id == groupId) it.copy(elderIds = members) else it })
+}

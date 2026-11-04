@@ -288,12 +288,11 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
                     }) { drafts = null; review = false }
                 }) { Text("확인하고 저장") } }, dismissButton = { TextButton(enabled = !busy, onClick = { review = false }) { Text("입력으로 돌아가기") } })
         } else {
-
-            if (tab != 2) CareSectionHeading(if (tab == 0) "승하차장소" else "어르신명단", if (tab == 0) current.places.size else current.elders.size)
-            if (tab != 2) Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp), enabled = !busy, onClick = {
+            if (tab == 0) Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp), enabled = !busy, onClick = {
                 if (tab == 0) { editing = false; showErrors = false; drafts = listOf(PlaceDraft()) }
                 else elderEditor = Elder(name = "")
             }) { Text(if (tab == 0) "장소 추가 · 여러 장소 등록" else "어르신 추가") }
+            if (tab == 0) Text("전체 ${current.places.size}개", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (tab == 2) {
                     TripScreen(current, busy, tracking = tracking, requestLocation = {
@@ -329,6 +328,7 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
                     } }
                 } else {
                     ElderGroupsPanel(current, busy, message,
+                        addElder = { elderEditor = Elder(name = "") },
                         editElder = { elderEditor = it }, deleteElder = { deleteElder = it },
                         save = { change, done -> persist(change, done = done) })
                 }

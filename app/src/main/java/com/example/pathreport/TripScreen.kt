@@ -157,12 +157,21 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                     val arrivalTime = arrival?.let {
                         SimpleDateFormat("HH:mm", Locale.KOREA).format(Date(it.estimatedAt))
                     } ?: "미기록"
-                    Text(
-                        "${index + 1}. ${target.elderName} - 도착 시간 $arrivalTime",
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (trip.endedAt != null) TextButton(enabled = !busy && !exporting,
-                        onClick = { deleting = trip.id to target.elderId }) { Text("${target.elderName} 기록 삭제") }
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("${index + 1}. ${target.elderName}", Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold)
+                            if (trip.endedAt != null) TextButton(
+                                enabled = !busy && !exporting,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                onClick = { deleting = trip.id to target.elderId }) {
+                                Text("기록 삭제", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Text("도착 시간 $arrivalTime", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             } }, confirmButton = { TextButton(onClick = { detailId = null }) { Text("닫기") } },
             dismissButton = { if (trip.endedAt != null) TextButton(enabled = !busy && !exporting,
