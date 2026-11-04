@@ -56,4 +56,17 @@ class ElderGroupsTest {
         assertEquals(ElderGroup("g3", "오전반", listOf("a")), changed.groups.last())
         changed.validate()
     }
+    @Test fun addingAndRemovingMembersPreservesOtherGroupsAndRecords() {
+        val recorded = data.startTrip(TripDirection.TO_CENTER, mapOf("a" to "q"), 1000)
+        val added = recorded.changeGroupMembers("g1", setOf("a", "b", "unknown"), true)
+        assertEquals(setOf("a", "b", "c"), added.groups[0].elderIds.toSet())
+        assertEquals(3, added.groups[0].elderIds.size)
+        val removed = added.changeGroupMembers("g1", setOf("a"), false)
+        assertEquals(setOf("b", "c"), removed.groups[0].elderIds.toSet())
+        assertEquals(recorded.groups[1], removed.groups[1])
+        assertEquals(recorded.elders, removed.elders)
+        assertEquals(recorded.links, removed.links)
+        assertEquals(recorded.trips, removed.trips)
+        removed.validate()
+    }
 }
