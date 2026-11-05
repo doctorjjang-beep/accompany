@@ -73,8 +73,8 @@ class TripExcelTest {
         parts.values.forEach { factory.newDocumentBuilder().parse(ByteArrayInputStream(it)) }
         val sheet = factory.newDocumentBuilder().parse(ByteArrayInputStream(parts.getValue("xl/worksheets/sheet1.xml")))
         assertEquals(0, sheet.getElementsByTagName("f").length)
-        assertEquals(2, sheet.getElementsByTagName("row").length)
+        assertEquals(3, sheet.getElementsByTagName("row").length)
         assertTrue(sheet.documentElement.textContent.contains("=김<&"))
-        assertTrue(sheet.documentElement.textContent.contains("하원 시간"))
+        assertTrue(sheet.documentElement.textContent.contains("하원"))
     }
 }

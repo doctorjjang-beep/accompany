@@ -17,7 +17,7 @@ class CoordinateOnlyStorageTest {
         val json = bytes.toString(Charsets.UTF_8)
         assertFalse(json.contains("PRIVATE_ADDRESS_123"))
         assertFalse(json.contains("\"address\""))
-        assertEquals(7, JSONObject(json).getInt("version"))
+        assertEquals(8, JSONObject(json).getInt("version"))
         assertEquals(original.withoutStoredAddresses(), CareCodec.decode(bytes))
     }
 
@@ -45,7 +45,7 @@ class CoordinateOnlyStorageTest {
             assertEquals(original, decoded)
             val rewritten = CareCodec.encode(decoded).toString(Charsets.UTF_8)
             assertFalse(JSONObject(rewritten).getJSONArray("trips").getJSONObject(0).has("route"))
-            assertEquals(7, JSONObject(rewritten).getInt("version"))
+            assertEquals(8, JSONObject(rewritten).getInt("version"))
         }
     }
     @Test fun draftNeedsCoordinatesButNotSearchAddress() {

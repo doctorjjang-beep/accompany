@@ -44,7 +44,7 @@ class ElderGroupsTest {
         assertEquals(recorded, CareCodec.decode(CareCodec.encode(recorded)))
         val legacy = JSONObject(String(CareCodec.encode(recorded), Charsets.UTF_8)).put("version", 6)
         legacy.remove("groups")
-        assertEquals(recorded.copy(groups = emptyList()), CareCodec.decode(legacy.toString().toByteArray()))
+        assertEquals(recorded.copy(groups = emptyList(), trips = recorded.trips.map { it.copy(crew = null) }), CareCodec.decode(legacy.toString().toByteArray()))
         val removed = recorded.copy(groups = emptyList())
         removed.validate()
         assertEquals(recorded.trips, removed.trips)

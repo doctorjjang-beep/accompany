@@ -23,7 +23,7 @@ import java.util.Locale
 private fun tripTime(time: Long) = SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.KOREA).format(Date(time))
 
 @Composable
-fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingInfo(), requestLocation: () -> Unit = {}, requestNotifications: () -> Unit = {}, endTrip: ((String) -> Unit)? = null, exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false, save: ((CareData) -> CareData) -> Unit) {
+fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingInfo(), requestLocation: () -> Unit = {}, requestNotifications: () -> Unit = {}, endTrip: ((String) -> Unit)? = null, exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false, saveCrew: ((CareData) -> CareData, () -> Unit) -> Unit, message: String = "", save: ((CareData) -> CareData) -> Unit) {
     var choosingExportDates by remember { mutableStateOf(false) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     var selecting by remember { mutableStateOf<TripDirection?>(null) }
@@ -37,10 +37,12 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
         if (selectedTab == 0) {
             if (active == null) {
                 TripStartTiles(enabled = !busy) { selecting = it }
+                CrewPanel(data, busy, message, saveCrew)
             } else {
                 Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${active.direction.label} 운행 진행 중", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                     Text("시작: ${tripTime(active.startedAt)} · 대상 ${active.targets.size}명")
+                    CrewSummary(active.crew)
                     Text(tracking.message)
                     Text("기록 완료 ${active.arrivals.size}명 · 미기록 ${active.targets.size - active.arrivals.size}명")
                     if (tracking.pending.isNotEmpty()) Text("저장 대기 ${tracking.pending.size}명 · 저장 실패 시 자동으로 다시 시도합니다.")
@@ -82,7 +84,7 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
             Button(modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp), enabled = !busy && !exporting && completedTrips.isNotEmpty(), onClick = { choosingExportDates = true }) {
                 Text(if (exporting) "엑셀 저장 중…" else "엑셀로 저장 (.xlsx)")
             }
-            Text("선택한 날짜의 종료 내역을 어르신별로 저장합니다. 등원은 첫 도착, 하원은 마지막 도착 시간이며 미기록은 빈칸입니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("선택한 날짜의 종료 내역을 어르신별로 저장합니다. 담당자 조합별 시트의 맨 윗줄에 이름을 표시합니다. 같은 담당자의 등원 첫 도착·하원 마지막 도착을 합치며, 미기록은 빈칸입니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (completedTrips.isEmpty()) Text("종료된 운행이 없습니다.")
             tripsByDate.values.forEach { trips ->
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -148,6 +150,7 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
     data.trips.find { it.id == detailId && deleting == null }?.let { trip ->
         AlertDialog(onDismissRequest = { detailId = null }, title = { Text("${trip.direction.label} 운행 상세") },
             text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CrewSummary(trip.crew)
                 Text("시작: ${tripTime(trip.startedAt)}")
                 Text("종료: ${trip.endedAt?.let { tripTime(it) } ?: "진행 중"}")
                 Text("기록 완료 ${trip.arrivals.size}명 · 미기록 ${trip.targets.size - trip.arrivals.size}명")
@@ -201,6 +204,7 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("운행 준비", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Text("${direction.label} 운행 대상·장소 선택", style = MaterialTheme.typography.titleLarge)
+                CrewSummary(data.crewSnapshot())
                 Text("운행에 포함할 어르신을 선택해 주세요.", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
