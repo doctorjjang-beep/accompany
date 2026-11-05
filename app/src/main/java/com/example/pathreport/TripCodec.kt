@@ -6,6 +6,7 @@ import org.json.JSONObject
 internal object TripCodec {
     fun encode(trips: List<Trip>) = JSONArray().apply {
         trips.forEach { trip -> put(JSONObject().put("id", trip.id).put("direction", trip.direction.name)
+            .put("crew", trip.crew?.let { CrewCodec.snapshot(it) } ?: JSONObject.NULL)
             .put("startedAt", trip.startedAt).put("endedAt", trip.endedAt)
             .put("arrivals", JSONArray().apply { trip.arrivals.forEach { arrival ->
                 put(JSONObject().put("elderId", arrival.elderId).put("placeId", arrival.placeId)
@@ -23,6 +24,7 @@ internal object TripCodec {
         val targets = trip.getJSONArray("targets")
         Trip(id = trip.getString("id"), direction = TripDirection.valueOf(trip.getString("direction")),
             startedAt = trip.getLong("startedAt"), endedAt = if (trip.isNull("endedAt")) null else trip.getLong("endedAt"),
+            crew = if (version < 8 || trip.isNull("crew")) null else CrewCodec.snapshot(trip.getJSONObject("crew")),
             arrivals = if (version < 3) emptyList() else trip.getJSONArray("arrivals").let { array ->
                 List(array.length()) { i -> array.getJSONObject(i).let { item ->
                     Arrival(item.getString("elderId"), item.getString("placeId"), item.getLong("estimatedAt"),

@@ -295,7 +295,7 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
             if (tab == 0) Text("전체 ${current.places.size}개", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (tab == 2) {
-                    TripScreen(current, busy, tracking = tracking, requestLocation = {
+                    TripScreen(current, busy, saveCrew = { change, done -> persist(change, done = done) }, message = message, tracking = tracking, requestLocation = {
                         if (!fineGranted) locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                         else activeTrip?.let { TripRuntime.start(context, it.id) }
                     }, requestNotifications = {

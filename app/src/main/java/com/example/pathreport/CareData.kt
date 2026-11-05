@@ -10,8 +10,14 @@ data class Elder(val id: String = UUID.randomUUID().toString(), val name: String
 data class PlaceElder(val placeId: String, val elderId: String)
 data class CareData(val places: List<StopPlace> = emptyList(), val elders: List<Elder> = emptyList(),
     val links: List<PlaceElder> = emptyList(), val legacyDigest: String? = null, val trips: List<Trip> = emptyList(),
-    val groups: List<ElderGroup> = emptyList()) {
+    val groups: List<ElderGroup> = emptyList(),
+    val staff: List<StaffMember> = emptyList(), val crewSelection: CrewSelection = CrewSelection()) {
     fun validate() {
+        require(staff.map { it.id }.distinct().size == staff.size)
+        require(staff.all { it.id.isNotBlank() && it.name.isNotBlank() })
+        val crewIds = listOfNotNull(crewSelection.driverId) + crewSelection.companionIds
+        require(crewIds.distinct().size == crewIds.size)
+        require(crewIds.all { id -> staff.any { it.id == id } })
         require(groups.map { it.id }.distinct().size == groups.size)
         require(groups.all { group -> group.id.isNotBlank() && group.name.isNotBlank() &&
             group.elderIds.distinct().size == group.elderIds.size && group.elderIds.all { id -> elders.any { it.id == id } } })
@@ -51,8 +57,10 @@ fun migrateLegacyItems(data: CareData, entries: List<LegacyPerson>, digest: Stri
 object CareCodec {
     fun encode(data: CareData): ByteArray {
         data.validate()
-        return JSONObject().put("version", 7).put("legacyDigest", data.legacyDigest)
+        return JSONObject().put("version", 8).put("legacyDigest", data.legacyDigest)
             .put("trips", TripCodec.encode(data.trips))
+            .put("staff", CrewCodec.people(data.staff))
+            .put("crewSelection", CrewCodec.selection(data.crewSelection))
             .put("groups", JSONArray().apply { data.groups.forEach { put(JSONObject()
                 .put("id", it.id).put("name", it.name).put("elders", JSONArray(it.elderIds))) } })
             .put("places", JSONArray().apply { data.places.forEach { p -> put(JSONObject()
@@ -65,7 +73,7 @@ object CareCodec {
     fun decode(bytes: ByteArray): CareData {
         val root = JSONObject(bytes.toString(Charsets.UTF_8))
         val version = root.getInt("version")
-        require(version in 1..7)
+        require(version in 1..8)
         val p = root.getJSONArray("places"); val e = root.getJSONArray("elders"); val l = root.getJSONArray("links")
         return CareData(List(p.length()) { i -> p.getJSONObject(i).let {
             StopPlace(it.getString("id"), it.getString("name"), it.optString("address", ""),
@@ -79,7 +87,9 @@ object CareCodec {
                     val members = group.getJSONArray("elders")
                     ElderGroup(group.getString("id"), group.getString("name"), List(members.length()) { members.getString(it) })
                 } }
-            }).also { it.validate() }
+            },
+            if (version < 8) emptyList() else CrewCodec.people(root.getJSONArray("staff")),
+            if (version < 8) CrewSelection() else CrewCodec.selection(root.getJSONObject("crewSelection"))).also { it.validate() }
     }
 }
 

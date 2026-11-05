@@ -19,8 +19,9 @@ fun CareData.deleteTripHistory(tripId: String, elderId: String? = null): CareDat
 /** Immutable snapshots retain the chosen identity and location after management edits. */
 data class TripTarget(val elderId: String, val elderName: String, val place: StopPlace)
 data class Trip(val id: String = UUID.randomUUID().toString(), val direction: TripDirection,
-    val targets: List<TripTarget>, val startedAt: Long, val endedAt: Long? = null, val arrivals: List<Arrival> = emptyList()) {
+    val targets: List<TripTarget>, val startedAt: Long, val endedAt: Long? = null, val arrivals: List<Arrival> = emptyList(), val crew: TripCrew? = null) {
     fun validate() {
+        crew?.validate()
         require(id.isNotBlank() && startedAt > 0)
         require(endedAt == null || endedAt >= startedAt)
         require(targets.isNotEmpty() && targets.map { it.elderId }.distinct().size == targets.size)
@@ -54,7 +55,7 @@ fun CareData.startTrip(direction: TripDirection, selections: Map<String, String>
         require(links.contains(PlaceElder(placeId, elderId)))
         TripTarget(elderId, elders.single { it.id == elderId }.name, places.single { it.id == placeId })
     }
-    val trip = Trip(direction = direction, targets = targets, startedAt = now)
+    val trip = Trip(direction = direction, targets = targets, startedAt = now, crew = crewSnapshot())
     return copy(trips = trips + trip).also { it.validate() }
 }
 
