@@ -91,7 +91,7 @@ class SecureCareStore(context: Context, fileName: String = "care-v1.enc", privat
     }
     /** Rewrite legacy payloads atomically, dropping addresses and obsolete movement history. */
     private fun upgradeStoredData(data: CareData): CareData {
-        val sanitized = data.withoutStoredAddresses()
+        val sanitized = data.withoutStoredAddresses().closeCompletedTrips()
         if (exists()) {
             val previous = CareCipher.decrypt(file.readFully(), key(false))
             if (!previous.contentEquals(CareCodec.encode(sanitized))) save(sanitized)

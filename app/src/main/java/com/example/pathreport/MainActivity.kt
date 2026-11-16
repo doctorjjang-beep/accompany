@@ -234,7 +234,7 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
     fun finishTrip(id: String) {
         if (busy) return
         val pending = TripRuntime.beginEnd(id)
-        persist({ it.appendDetectedArrivals(id, pending).endTrip(id, System.currentTimeMillis()) },
+        persist({ it.appendDetectedArrivals(id, pending).endActiveTrip(id, System.currentTimeMillis()) },
             failed = { TripRuntime.clearEnd(id) }) {
             TripRuntime.clearEnd(id)
             context.stopService(android.content.Intent(context, TripLocationService::class.java))

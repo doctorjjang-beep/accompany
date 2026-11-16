@@ -38,6 +38,9 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
             if (active == null) {
                 TripStartTiles(enabled = !busy) { selecting = it }
                 CrewPanel(data, busy, message, saveCrew)
+                Text("모든 어르신의 기록 완료 또는 GPS로 1시간 무이동이 확인되면 자동 종료됩니다.", style = MaterialTheme.typography.bodySmall)
+                if (tracking.phase == TrackingPhase.COMPLETE && tracking.tripId != null && data.trips.any { it.id == tracking.tripId && it.endedAt != null })
+                    Text(tracking.message, style = MaterialTheme.typography.bodyMedium)
             } else {
                 Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${active.direction.label} 운행 진행 중", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
@@ -125,7 +128,7 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                 Text("대기 중인 도착 기록과 종료 시각을 저장하고 GPS 감지를 멈춥니다.")
             }
         },
-        confirmButton = { TextButton(enabled = !busy, onClick = { if (endTrip != null) endTrip(id) else save { it.appendDetectedArrivals(id, tracking.pending).endTrip(id, System.currentTimeMillis()) } }) { Text("종료하고 저장") } },
+        confirmButton = { TextButton(enabled = !busy, onClick = { if (endTrip != null) endTrip(id) else save { it.appendDetectedArrivals(id, tracking.pending).endActiveTrip(id, System.currentTimeMillis()) } }) { Text("종료하고 저장") } },
         dismissButton = { TextButton(enabled = !busy, onClick = { ending = null }) { Text("취소") } }) }
     LaunchedEffect(data.trips) { if (data.trips.any { it.id == ending && it.endedAt != null }) ending = null }
     val deleteTarget = deleting
@@ -155,7 +158,7 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
                 Text("종료: ${trip.endedAt?.let { tripTime(it) } ?: "진행 중"}")
                 Text("기록 완료 ${trip.arrivals.size}명 · 미기록 ${trip.targets.size - trip.arrivals.size}명")
                 Text("운행 시작 당시의 대상·장소입니다. GPS 도착 추정은 실제 승하차 확인이 아닙니다.")
-                trip.targets.forEachIndexed { index, target ->
+                trip.targets.sortedByKoreanName { it.elderName }.forEachIndexed { index, target ->
                     val arrival = trip.arrivals.find { it.elderId == target.elderId }
                     val arrivalTime = arrival?.let {
                         SimpleDateFormat("HH:mm", Locale.KOREA).format(Date(it.estimatedAt))
@@ -286,7 +289,7 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
                         Text(if (showPrivacy) "운행 기록 및 개인정보 안내 접기" else "운행 기록 및 개인정보 안내 펼치기")
                     }
                     if (showPrivacy) Text(
-                        "시작 시 대상과 장소를 고정하여 암호화 저장합니다. 정확한 위치 권한을 허용하면 대상 장소의 도착을 감지하여 기록합니다. 화면을 꺼도 기록하며 운행 종료를 누르면 멈춥니다. GPS 도착 추정은 실제 승하차 확인이 아닙니다.",
+                        "시작 시 대상과 장소를 고정하여 암호화 저장합니다. 정확한 위치 권한을 허용하면 대상 장소의 도착을 감지하여 기록합니다. 화면을 꺼도 기록하며 운행 종료를 누르거나 모든 대상 기록이 완료되면 종료합니다. 정확한 GPS가 유지된 상태에서 50m 범위 안에 1시간 머물고 이동 속도가 감지되지 않아도 자동 종료합니다. GPS 수신 중단·정확도 저하·서비스 재시작 시 무이동 확인은 다시 시작합니다. GPS 도착 추정은 실제 승하차 확인이 아닙니다.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

@@ -65,7 +65,16 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
                     }
                     Text(data.elders.filter { it.id in group.elderIds }.sortedByKoreanName { it.name }
                         .joinToString(" · ") { it.name }.ifEmpty { "아직 구성원이 없어요" }, style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { selectedId = group.id }, modifier = Modifier.fillMaxWidth()) { Text("구성원 관리") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(enabled = !busy, onClick = { selectedId = group.id },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)) { Text("구성원 관리") }
+                        FilledTonalButton(enabled = !busy, onClick = {
+                            selectedId = group.id
+                            memberAction = true
+                        }, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ 어르신 추가") }
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         TextButton(enabled = !busy, onClick = { creating = false; editing = group }) { Text("이름 변경") }
                         TextButton(enabled = !busy, onClick = { deleting = group }) { Text("그룹 삭제", color = MaterialTheme.colorScheme.error) }

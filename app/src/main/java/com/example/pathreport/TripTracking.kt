@@ -61,9 +61,9 @@ object TripRuntime {
 /** A saved active trip alone does not prove the OS is still running its location service. */
 fun trackingFor(trip: Trip?, runtime: TrackingInfo, fineGranted: Boolean, notificationsAllowed: Boolean): TrackingInfo {
     val info = when {
-        trip == null -> TrackingInfo()
+        trip == null -> if (runtime.phase == TrackingPhase.COMPLETE) runtime else TrackingInfo()
         trip.endedAt != null -> TrackingInfo(trip.id, "운행이 종료되었습니다.", phase = TrackingPhase.COMPLETE)
-        trip.arrivals.size == trip.targets.size -> TrackingInfo(trip.id, "모든 대상의 도착을 기록했습니다. 운행 종료를 눌러 종료 시각을 저장해 주세요.", phase = TrackingPhase.COMPLETE)
+        trip.arrivals.size == trip.targets.size -> TrackingInfo(trip.id, "모든 대상의 도착을 기록했습니다. 자동 종료 저장을 확인하고 있습니다.", phase = TrackingPhase.COMPLETE)
         runtime.tripId == trip.id -> runtime
         else -> TrackingInfo(trip.id, "진행 중인 운행이 있지만 GPS 감지는 중단되어 있습니다. 감지 재개를 눌러 주세요.")
     }

@@ -20,7 +20,7 @@ class TripScreenTest {
             listOf(TripTarget("e", "삭제 테스트", p)), 1000, 2000)
         val state = mutableStateOf(CareData(trips = listOf(trip)))
         compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
-            TripScreen(state.value, false) { state.value = it(state.value) }
+            TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) }
         } } }
         compose.onNodeWithText("운행 내역").performClick()
         compose.onNodeWithText("기록 0명 · 미기록 1명 · 종료").performScrollTo().performClick()
@@ -34,11 +34,29 @@ class TripScreenTest {
         compose.onNodeWithText("종료된 운행이 없습니다.").assertExists()
         compose.runOnIdle { assertTrue(state.value.trips.isEmpty()) }
     }
+    @Test fun historyDetailsSortAppendedMembersWithoutChangingStoredTargets() {
+        val p = StopPlace("p", "가상 장소", "", 37.5, 127.0)
+        // Simulate a later-added group member appended after the existing selections.
+        val targets = listOf(TripTarget("a", "가상가", p), TripTarget("c", "가상다", p),
+            TripTarget("b", "가상나", p))
+        val trip = Trip("done", TripDirection.TO_CENTER, targets, 1000, 2000)
+        val state = mutableStateOf(CareData(trips = listOf(trip)))
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
+            TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) }
+        } } }
+        compose.onNodeWithText("운행 내역").performClick()
+        compose.onNodeWithText("기록 0명 · 미기록 3명 · 종료").performScrollTo().performClick()
+        compose.onNodeWithText("1. 가상가").assertExists()
+        compose.onNodeWithText("2. 가상나").assertExists()
+        compose.onNodeWithText("3. 가상다").assertExists()
+        compose.runOnIdle { assertEquals(targets, state.value.trips.single().targets) }
+    }
+
     @Test fun selectStartEndAndInspectTrip() {
         val p = StopPlace("p", "가상 장소", "가상 주소", 37.5, 127.0)
         val e = Elder("e", "가상 어르신")
         val state = mutableStateOf(CareData(listOf(p), listOf(e), listOf(PlaceElder("p", "e"))))
-        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false) { state.value = it(state.value) } } } }
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) } } } }
         compose.onNodeWithText("등원 운행 시작").performClick()
         compose.onNodeWithText("선택한 대상으로 시작").assertIsNotEnabled()
         compose.onNode(isToggleable()).performClick()
@@ -57,7 +75,7 @@ class TripScreenTest {
         val p = StopPlace("p", "가상 장소", "가상 주소")
         val e = Elder("e", "가상 어르신")
         val data = CareData(listOf(p), listOf(e), listOf(PlaceElder("p", "e")))
-        compose.setContent { MaterialTheme { TripScreen(data, false) {} } }
+        compose.setContent { MaterialTheme { TripScreen(data, false, saveCrew = { _, done -> done() }) {} } }
         compose.onNodeWithText("등원 운행 시작").performClick()
         compose.onNode(isToggleable()).assertIsNotEnabled()
         compose.onNodeWithText("선택한 대상으로 시작").assertIsNotEnabled()
@@ -66,7 +84,7 @@ class TripScreenTest {
         val p = StopPlace("p", "가상 장소", "가상 주소", 37.5, 127.0)
         val e = Elder("e", "가상 어르신")
         val state = mutableStateOf(CareData(listOf(p), listOf(e), listOf(PlaceElder("p", "e"))))
-        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false) { state.value = it(state.value) } } } }
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) } } } }
         compose.onNodeWithText("하원 운행 시작").performClick()
         compose.onNodeWithText("하원 운행 대상·장소 선택").assertExists()
         compose.onNode(isToggleable()).performClick()
@@ -78,7 +96,7 @@ class TripScreenTest {
         val p = StopPlace("p", "비표시 장소", "비표시 상세 주소", 37.5, 127.0)
         val e = Elder("e", "이름 선택 확인")
         val state = mutableStateOf(CareData(listOf(p), listOf(e), listOf(PlaceElder("p", "e"))))
-        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false) { state.value = it(state.value) } } } }
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) } } } }
         compose.onNodeWithText("등원 운행 시작").performClick()
         compose.onNodeWithText("1. 이름 선택 확인").performClick()
         compose.onNodeWithText("비표시 상세 주소").assertDoesNotExist()
@@ -91,7 +109,7 @@ class TripScreenTest {
         val b = StopPlace("b", "가상 장소 나", "숨긴 주소 나", 37.6, 127.1)
         val e = Elder("e", "장소 선택 확인")
         val state = mutableStateOf(CareData(listOf(a, b), listOf(e), listOf(PlaceElder("a", "e"), PlaceElder("b", "e"))))
-        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false) { state.value = it(state.value) } } } }
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { TripScreen(state.value, false, saveCrew = { transform, done -> state.value = transform(state.value); done() }) { state.value = it(state.value) } } } }
         compose.onNodeWithText("하원 운행 시작").performClick()
         compose.onNodeWithText("1. 장소 선택 확인").performClick()
         compose.onNodeWithText("가상 장소 나").performClick()
