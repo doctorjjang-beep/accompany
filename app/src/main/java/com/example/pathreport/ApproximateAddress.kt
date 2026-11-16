@@ -5,7 +5,7 @@ internal fun approximateAddress(address: String): String {
     val normalized = address.trim().removePrefix("대한민국").trim()
         .replace(Regex("\\s+"), " ")
         .substringBefore('(').substringBefore(',').trim()
-    // Keep digits belonging to road names (e.g. 가가상샘플로15마길), but omit building numbers.
+    // Keep digits belonging to road names (e.g. 가상샘플로15마길), but omit building numbers.
     val road = Regex("(?:^|\\s)[가-힣A-Za-z0-9·.]+(?:대로|로|길)(?=\\s|[0-9]|$)").find(normalized)
     if (road != null) return normalized.substring(0, road.range.last + 1).trim() + " 부근"
     // Lot-number addresses: stop at a named district, never an apartment unit like 101동.

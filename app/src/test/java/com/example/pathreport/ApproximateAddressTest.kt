@@ -6,7 +6,7 @@ import org.junit.Test
 class ApproximateAddressTest {
     @Test fun hidesBuildingNumbersButKeepsRoadNameDigits() {
         assertEquals("가상특별시 가상구 가상샘플8길 부근", approximateAddress("대한민국 가상특별시 가상구 가상샘플8길 3"))
-        assertEquals("가상특별시 가상구 가가상샘플로15마길 부근", approximateAddress("대한민국 가상특별시 가상구 가가상샘플로15마길 28 101동 203호"))
+        assertEquals("가상특별시 가상구 가상샘플로15마길 부근", approximateAddress("대한민국 가상특별시 가상구 가상샘플로15마길 28 101동 203호"))
         assertEquals("가상특별시 가상구 가상대로14길 부근", approximateAddress("대한민국 가상특별시 가상구 가상대로14길 74 (가상동)"))
     }
     @Test fun hidesLotNumbersAndUnrecognizedDetails() {
@@ -18,7 +18,7 @@ class ApproximateAddressTest {
         assertEquals("가상샘플역 부근", approximateAddress("가상특별시 가상샘플역"))
         assertEquals("가상쉼터공원 부근", approximateAddress("대한민국 가상특별시 가상쉼터공원"))
         assertEquals("가상하우스 부근", approximateAddress("가상특별시 가상하우스 101동 203호"))
-        assertEquals("가상특별시 가상구 가가상샘플로 부근", approximateAddress("가상특별시 가상구 가가상샘플로 123 가상샘플역"))
+        assertEquals("가상특별시 가상구 가상샘플로 부근", approximateAddress("가상특별시 가상구 가상샘플로 123 가상샘플역"))
         assertEquals("가상특별시 가상구 가상동 부근", approximateAddress("가상특별시 가상구 가상동 123 가상샘플역"))
         assertEquals("가상특별시 부근", approximateAddress("가상특별시"))
     }
