@@ -6,7 +6,6 @@ internal class TripIdleDetector {
         const val IDLE_MS = 60 * 60 * 1000L
         const val RADIUS_METERS = 50.0
         const val MAX_GAP_MS = 15_000L
-        const val MAX_STILL_SPEED_MPS = 0.5
     }
     private var anchor: GpsSample? = null
     private var lastElapsed: Long? = null
@@ -23,9 +22,7 @@ internal class TripIdleDetector {
         }
         if (lastElapsed?.let { sample.elapsedMs <= it } == true) return
         lastElapsed = sample.elapsedMs
-        if (sample.speedMetersPerSecond?.let { !it.isFinite() || it < 0 || it > MAX_STILL_SPEED_MPS } == true) {
-            anchor = null; return
-        }
+        // Idle duration depends on position, not reported GPS speed.
         val start = anchor
         if (start == null || distanceMeters(start.latitude, start.longitude, sample.latitude, sample.longitude) > RADIUS_METERS)
             anchor = sample

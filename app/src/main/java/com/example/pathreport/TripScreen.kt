@@ -1,6 +1,7 @@
 package com.example.pathreport
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.selectable
@@ -8,12 +9,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
@@ -151,40 +154,12 @@ fun TripScreen(data: CareData, busy: Boolean, tracking: TrackingInfo = TrackingI
             dismissButton = { TextButton(enabled = !busy, onClick = { deleting = null }) { Text("취소") } })
     }
     data.trips.find { it.id == detailId && deleting == null }?.let { trip ->
-        AlertDialog(onDismissRequest = { detailId = null }, title = { Text("${trip.direction.label} 운행 상세") },
-            text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrewSummary(trip.crew)
-                Text("시작: ${tripTime(trip.startedAt)}")
-                Text("종료: ${trip.endedAt?.let { tripTime(it) } ?: "진행 중"}")
-                Text("기록 완료 ${trip.arrivals.size}명 · 미기록 ${trip.targets.size - trip.arrivals.size}명")
-                Text("운행 시작 당시의 대상·장소입니다. GPS 도착 추정은 실제 승하차 확인이 아닙니다.")
-                trip.targets.sortedByKoreanName { it.elderName }.forEachIndexed { index, target ->
-                    val arrival = trip.arrivals.find { it.elderId == target.elderId }
-                    val arrivalTime = arrival?.let {
-                        SimpleDateFormat("HH:mm", Locale.KOREA).format(Date(it.estimatedAt))
-                    } ?: "미기록"
-                    Column(Modifier.fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("${index + 1}. ${target.elderName}", Modifier.weight(1f),
-                                fontWeight = FontWeight.Bold)
-                            if (trip.endedAt != null) TextButton(
-                                enabled = !busy && !exporting,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                onClick = { deleting = trip.id to target.elderId }) {
-                                Text("기록 삭제", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                        Text("도착 시간 $arrivalTime", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            } }, confirmButton = { TextButton(onClick = { detailId = null }) { Text("닫기") } },
-            dismissButton = { if (trip.endedAt != null) TextButton(enabled = !busy && !exporting,
-                onClick = { deleting = trip.id to null }) { Text("이 운행 전체 삭제") } })
+        TripDetailSheet(trip, busy, exporting, dismiss = { detailId = null },
+            delete = { elderId -> deleting = trip.id to elderId })
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirection, dismiss: () -> Unit,
     start: (TripDirection, Map<String, String>) -> Unit) {
@@ -192,24 +167,77 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
     var showPrivacy by remember { mutableStateOf(false) }
     val eligible = data.eligibleTripPlaces()
     LaunchedEffect(eligible) { choices = data.addTripMembers(choices, emptyList()) }
-    androidx.compose.ui.window.Dialog(
+    val currentBusy by rememberUpdatedState(busy)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { !currentBusy })
+    ModalBottomSheet(
         onDismissRequest = { if (!busy) dismiss() },
-        properties = androidx.compose.ui.window.DialogProperties(
-            usePlatformDefaultWidth = false,
-            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn
-        )
+        sheetState = sheetState,
+        sheetGesturesEnabled = !busy,
+        properties = ModalBottomSheetProperties(
+            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn,
+            shouldDismissOnBackPress = !busy
+        ),
+        containerColor = MaterialTheme.colorScheme.background,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
-        Surface(
-            modifier = Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight(0.9f),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer
-        ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("운행 준비", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text("${direction.label} 운행 대상·장소 선택", style = MaterialTheme.typography.titleLarge)
-                CrewSummary(data.crewSnapshot())
-                Text("운행에 포함할 어르신을 선택해 주세요.", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${direction.label} 운행 시작", style = MaterialTheme.typography.titleLarge)
+                        Text("함께 이동할 어르신을 선택하세요", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(enabled = !busy, onClick = dismiss) { Text("닫기") }
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val crew = data.crewSnapshot()
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                        color = lerp(MaterialTheme.colorScheme.surface, Color(0xFF87BCEB), 0.14f),
+                        border = BorderStroke(1.dp, lerp(MaterialTheme.colorScheme.outlineVariant, Color(0xFF7CA4DA), 0.3f))) {
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("운행 담당자", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("운전자: ${crew.driverLabel()} · 동승자: ${crew.companionsLabel()}",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (data.groups.isNotEmpty()) {
+                        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+                            color = lerp(MaterialTheme.colorScheme.surface, Color(0xFF739CE0), 0.16f),
+                            border = BorderStroke(1.dp, lerp(MaterialTheme.colorScheme.outlineVariant, Color(0xFF7CA4DA), 0.3f))) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("그룹별 빠른 선택", style = MaterialTheme.typography.titleMedium)
+                        Text("그룹을 누르면 구성원이 함께 선택됩니다.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            data.groups.sortedByKoreanName { it.name }.forEach { group ->
+                                val available = group.elderIds.filter { !eligible[it].isNullOrEmpty() }
+                                val selectedAll = available.isNotEmpty() && available.all { it in choices }
+                                val skipped = group.elderIds.size - available.size
+                                FilterChip(
+                                    selected = selectedAll,
+                                    enabled = !busy && available.isNotEmpty(),
+                                    onClick = { choices = data.addTripMembers(choices, group.elderIds) },
+                                    label = {
+                                        Text("${group.name} · ${available.size}명" +
+                                            (if (selectedAll) " 선택됨" else "") +
+                                            (if (skipped > 0) " · ${skipped}명 제외" else ""), maxLines = 1)
+                                    }
+                                )
+                            }
+                        }
+                        if (data.groups.any { group -> group.elderIds.any { eligible[it].isNullOrEmpty() } })
+                            Text("좌표가 있는 연결 장소가 없는 어르신은 그룹 선택에서 제외됩니다.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        }
+                    }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(enabled = !busy && eligible.any { (id, places) -> places.isNotEmpty() && id !in choices },
                         onClick = {
@@ -221,36 +249,25 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
                         Text("전체선택 해제")
                     }
                 }
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (data.groups.isNotEmpty()) {
-                        Text("그룹별 빠른 선택", style = MaterialTheme.typography.titleMedium)
-                        Text("그룹을 누르면 구성원이 추가됩니다. 중복 없이 선택되며, 아래에서 개별 변경할 수 있어요.",
-                            style = MaterialTheme.typography.bodySmall)
-                        data.groups.sortedByKoreanName { it.name }.forEach { group ->
-                            val available = group.elderIds.filter { !eligible[it].isNullOrEmpty() }
-                            val selectedAll = available.isNotEmpty() && available.all { it in choices }
-                            OutlinedButton(modifier = Modifier.fillMaxWidth(),
-                                enabled = !busy && available.isNotEmpty() && !selectedAll,
-                                onClick = { choices = data.addTripMembers(choices, group.elderIds) }) {
-                                Text("${group.name} · ${available.size}명 ${if (selectedAll) "선택됨" else "선택"}")
-                            }
-                            val skipped = group.elderIds.size - available.size
-                            if (skipped > 0) Text("${group.name}: 연결 장소의 좌표가 없는 ${skipped}명 제외",
-                                style = MaterialTheme.typography.bodySmall)
-                            if (group.elderIds.isEmpty()) Text("구성원이 없는 그룹입니다.", style = MaterialTheme.typography.bodySmall)
-                        }
-                        HorizontalDivider()
-                    }
                     Text("선택 가능 ${eligible.count { it.value.isNotEmpty() }}명",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (data.elders.isEmpty()) Text("어르신을 등록한 뒤 좌표가 있는 장소와 연결해 주세요.")
-                    data.elders.sortedByKoreanName { it.name }.forEach { elder ->
+                    val orderedElders = data.elders.sortedForTripSelection(choices.keys)
+                    orderedElders.forEachIndexed { index, elder ->
                         val places = eligible.getValue(elder.id)
                         val selected = elder.id in choices
+                        if (index == 0 || selected != (orderedElders[index - 1].id in choices)) {
+                            Text(if (selected) "선택한 어르신 · ${choices.size}명"
+                                else "선택하지 않은 어르신 · ${data.elders.size - choices.size}명",
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Surface(
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.background
+                            color = lerp(MaterialTheme.colorScheme.surface, Color(0xFF6B9FE5), if (selected) 0.26f else 0.06f),
+                            border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                else lerp(MaterialTheme.colorScheme.outlineVariant, Color(0xFF7CA4DA), 0.2f))
                         ) {
                             Column {
                                 Row(Modifier.fillMaxWidth().toggleable(value = selected,
@@ -261,6 +278,8 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text("${elder.name} 어르신", style = MaterialTheme.typography.titleMedium)
+                                        if (places.size == 1) Text(places.single().name,
+                                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         if (places.size != 1) Text(when {
                                             places.isEmpty() -> "좌표가 있는 연결 장소가 없어 선택할 수 없어요."
                                             selected -> "아래에서 운행 장소를 확인해 주세요."
@@ -302,7 +321,7 @@ private fun StartTripDialog(data: CareData, busy: Boolean, direction: TripDirect
                         Text(if (busy) "저장 중…" else "${choices.size}명으로 ${direction.label} 시작")
                     }
                 }
+                Spacer(Modifier.height(8.dp))
             }
-        }
     }
 }

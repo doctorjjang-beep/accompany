@@ -6,7 +6,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -51,7 +50,8 @@ internal fun CrewPanel(data: CareData, busy: Boolean, message: String,
     choosingDriver?.let { driver -> key(driver) {
         var ids by remember { mutableStateOf(if (driver) listOfNotNull(data.crewSelection.driverId).toSet() else data.crewSelection.companionIds.toSet()) }
         var deleting by remember { mutableStateOf<StaffMember?>(null) }
-        var name by rememberSaveable { mutableStateOf("") }
+        // Personal input stays in memory; never include it in saved-instance state.
+        var name by remember { mutableStateOf("") }
         val duplicate = data.staff.any { it.name.equals(name.trim(), true) }
         val available = data.staff.filter { driver || it.id != data.crewSelection.driverId }
         val validIds = ids.intersect(available.map { it.id }.toSet())

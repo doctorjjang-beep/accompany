@@ -9,11 +9,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.SecureFlagPolicy
 
 @Composable
 internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
@@ -25,28 +23,45 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
     var creating by remember { mutableStateOf(false) }
     var memberAction by remember { mutableStateOf<Boolean?>(null) }
     var deleting by remember { mutableStateOf<ElderGroup?>(null) }
+    var menuGroupId by remember { mutableStateOf<String?>(null) }
     val selected = data.groups.find { it.id == selectedId }
-    CareTabs(listOf("어르신명단", "그룹관리"), tab) { tab = it; selectedId = null }
-    if (tab == 0) {
+    CareTabs(listOf("어르신명단", "그룹관리", "현위치 바로 등록"), tab) { tab = it; selectedId = null }
+    if (tab == 2) {
+        QuickElderRegistration(busy, message, save)
+    } else if (tab == 0) {
         Button(onClick = addElder, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("+ 어르신 추가") }
         Text("전체 ${data.elders.size}명", style = MaterialTheme.typography.bodySmall)
         if (data.elders.isEmpty()) Text("등록된 어르신이 없습니다. 어르신을 추가해 주세요.")
-        data.elders.sortedByKoreanName { it.name }.forEach { elder ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CareSymbol(R.drawable.ic_people)
-                        Column(Modifier.weight(1f)) {
-                            Text(elder.name, style = MaterialTheme.typography.titleLarge)
+        val sortedElders = data.elders.sortedByKoreanName { it.name }
+        val groupedIds = data.groups.flatMap { it.elderIds }.toSet()
+        val sections = data.groups.sortedByKoreanName { it.name }.map { group ->
+            group.name to sortedElders.filter { it.id in group.elderIds }
+        }.filter { it.second.isNotEmpty() } + listOf(
+            "소속 그룹 없음" to sortedElders.filter { it.id !in groupedIds }
+        ).filter { it.second.isNotEmpty() }
+        sections.forEach { (groupName, members) ->
+            CareBlueSection(whiteBackground = true) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(groupName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text("${members.size}명", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                members.forEachIndexed { index, elder ->
+                    if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 68.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(elder.name, style = MaterialTheme.typography.titleMedium)
                             Text("연결 장소: " + data.links.filter { it.elderId == elder.id }.mapNotNull { link ->
                                 data.places.find { it.id == link.placeId }?.name }.joinToString(", ").ifEmpty { "없음" },
-                                style = MaterialTheme.typography.bodySmall)
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         PlaceCardActions(enabled = !busy, edit = { editElder(elder) }, delete = { deleteElder(elder) },
                             editDescription = "수정 · 장소 연결", deleteDescription = "어르신 삭제", compact = true, horizontal = true)
                     }
-                    Text(data.groups.filter { elder.id in it.elderIds }.joinToString(" · ") { it.name }.ifEmpty { "소속 그룹 없음" },
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -61,7 +76,24 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CareSymbol(R.drawable.ic_car)
                         Text(group.name, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                        Text("${group.elderIds.size}명")
+                        Text("${group.elderIds.size}명", style = MaterialTheme.typography.bodySmall)
+                        Box {
+                            FilledTonalIconButton(enabled = !busy, onClick = { menuGroupId = group.id }) {
+                                Icon(painterResource(R.drawable.ic_more_vert),
+                                    contentDescription = "${group.name} 그룹 더보기", modifier = Modifier.size(20.dp))
+                            }
+                            DropdownMenu(expanded = menuGroupId == group.id,
+                                onDismissRequest = { menuGroupId = null }) {
+                                DropdownMenuItem(text = { Text("이름 변경") }, enabled = !busy,
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp)) },
+                                    onClick = { menuGroupId = null; creating = false; editing = group })
+                                HorizontalDivider()
+                                DropdownMenuItem(text = { Text("그룹 삭제", color = MaterialTheme.colorScheme.error) }, enabled = !busy,
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.error) },
+                                    onClick = { menuGroupId = null; deleting = group })
+                            }
+                        }
                     }
                     Text(data.elders.filter { it.id in group.elderIds }.sortedByKoreanName { it.name }
                         .joinToString(" · ") { it.name }.ifEmpty { "아직 구성원이 없어요" }, style = MaterialTheme.typography.bodySmall)
@@ -74,10 +106,6 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
                             memberAction = true
                         }, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ 어르신 추가") }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        TextButton(enabled = !busy, onClick = { creating = false; editing = group }) { Text("이름 변경") }
-                        TextButton(enabled = !busy, onClick = { deleting = group }) { Text("그룹 삭제", color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
@@ -102,7 +130,8 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
         }
     }
     editing?.let { draft -> key(draft.id) {
-        var name by rememberSaveable { mutableStateOf(draft.name) }
+        // Personal input stays in memory; never include it in saved-instance state.
+        var name by remember { mutableStateOf(draft.name) }
         val duplicate = data.groups.any { it.id != draft.id && it.name.equals(name.trim(), true) }
         GroupSheet(if (creating) "그룹 추가" else "그룹 이름 변경", busy, message,
             dismiss = { editing = null }, canSave = name.isNotBlank() && !duplicate,
@@ -114,10 +143,13 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
                     latest.saveGroup(base.copy(name = name))
                 }, { editing = null; if (isNew) { selectedId = draft.id; memberAction = true } })
             }) {
+            CareBlueSection(stronger = true) {
+            Text("그룹 정보", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = name, onValueChange = { name = it }, enabled = !busy,
                 label = { Text("그룹 이름") }, placeholder = { Text("예: 9631 1차, 오전반") },
                 singleLine = true, isError = duplicate, modifier = Modifier.fillMaxWidth())
             if (duplicate) Text("이미 사용 중인 그룹 이름입니다.", color = MaterialTheme.colorScheme.error)
+            }
         }
     } }
     if (selected != null) memberAction?.let { adding -> key(selected.id, adding) {
@@ -128,9 +160,13 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
             dismiss = { memberAction = null }, canSave = validIds.isNotEmpty(),
             saveLabel = "${validIds.size}명 ${if (adding) "추가하기" else "그룹에서 빼기"}",
             save = { save({ latest -> latest.changeGroupMembers(selected.id, validIds, adding) }, { memberAction = null }) }) {
+            CareBlueSection(stronger = true) {
             Text(selected.name, style = MaterialTheme.typography.titleMedium)
             Text(if (adding) "명단에서 추가할 분을 선택하세요. 여러 그룹에 함께 소속할 수 있어요."
                 else "이 그룹에서만 빠집니다. 어르신명단과 기존 운행 기록은 유지됩니다.")
+            }
+            CareBlueSection {
+            Text("어르신 선택", style = MaterialTheme.typography.titleMedium)
             if (candidates.isEmpty()) Text(if (adding) "추가할 어르신이 없습니다. 어르신명단에서 먼저 등록해 주세요." else "선택할 구성원이 없습니다.")
             Row {
                 TextButton(enabled = !busy && candidates.isNotEmpty(), onClick = { ids = candidates.map { it.id }.toSet() }) { Text("전체 선택") }
@@ -139,6 +175,7 @@ internal fun ElderGroupsPanel(data: CareData, busy: Boolean, message: String,
             candidates.forEach { elder -> MemberChoice(elder.name, elder.id in validIds, !busy) { checked ->
                 ids = if (checked) ids + elder.id else ids - elder.id
             } }
+            }
         }
     } }
     deleting?.let { group ->
@@ -167,22 +204,12 @@ private fun MemberChoice(name: String, selected: Boolean, enabled: Boolean, chan
 @Composable
 private fun GroupSheet(title: String, busy: Boolean, message: String, dismiss: () -> Unit,
     canSave: Boolean, save: () -> Unit, saveLabel: String = "저장", footer: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = { if (!busy) dismiss() }, properties = DialogProperties(
-        usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = SecureFlagPolicy.SecureOn)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.safeDrawingPadding().imePadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(enabled = !busy, onClick = dismiss) { Text("취소") }
-                }
-                if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.error)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
-                footer()
-                Button(enabled = !busy && canSave, onClick = save, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Text(if (busy) "저장 중…" else saveLabel)
-                }
-            }
+    CareEditorSheet(title = title, busy = busy, dismiss = dismiss, footer = {
+        if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.error)
+        footer()
+        Button(enabled = !busy && canSave, onClick = save,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            Text(if (busy) "저장 중…" else saveLabel)
         }
-    }
+    }, content = content)
 }

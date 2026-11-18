@@ -17,14 +17,23 @@ class TripAutoEndTest {
         assertTrue(detector.shouldEnd(TripIdleDetector.IDLE_MS))
         assertFalse(detector.shouldEnd(TripIdleDetector.IDLE_MS + TripIdleDetector.MAX_GAP_MS + 1))
     }
-    @Test fun movementAndSpeedRestartTheHour() {
+    @Test fun leavingRadiusRestartsHourButWalkingSpeedDoesNot() {
         val detector = TripIdleDetector()
         still(detector, 0, 3_599_000)
         detector.accept(sample(3_600_000, lat = 37.001), 3_600_000)
         assertFalse(detector.shouldEnd(3_600_000))
         still(detector, 3_601_000, 7_199_000, 37.001)
         detector.accept(sample(7_200_000, lat = 37.001, speed = 1.0), 7_200_000)
-        assertFalse(detector.shouldEnd(7_200_000))
+        assertTrue(detector.shouldEnd(7_200_000))
+    }
+    @Test fun walkingWithinRadiusForAnHourStillEndsTrip() {
+        val detector = TripIdleDetector()
+        for (t in 0L..TripIdleDetector.IDLE_MS step 1000) {
+            val lat = 37.0 + if (t % 2000L == 0L) 0.0001 else -0.0001
+            detector.accept(sample(t, lat = lat, speed = 1.4), t)
+            if (t < TripIdleDetector.IDLE_MS) assertFalse(detector.shouldEnd(t))
+        }
+        assertTrue(detector.shouldEnd(TripIdleDetector.IDLE_MS))
     }
     @Test fun badAccuracyMissingGpsAndRestartNeverCountAsAnIdleHour() {
         val detector = TripIdleDetector()

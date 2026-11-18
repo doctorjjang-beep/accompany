@@ -310,20 +310,20 @@ fun CareApp(exportTrips: (Set<String>) -> Unit = {}, exporting: Boolean = false,
                     }, endTrip = ::finishTrip, exportTrips = exportTrips, exporting = exporting) { persist(it) }
                 } else if (tab == 0) {
                     if (current.places.isEmpty()) Text("등록된 장소가 없습니다. 장소를 추가해 주세요.")
-                    current.places.sortedByKoreanName { it.name }.forEach { place -> Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    current.places.sortedByKoreanName { it.name }.forEach { place -> Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             CareSymbol(R.drawable.ic_location)
                             Column(Modifier.weight(1f)) {
-                                Text(place.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text(place.name, style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                 Spacer(Modifier.height(4.dp))
-                                if (place.latitude == null) Text("좌표 미등록 · 수정에서 위치를 지정해 주세요.")
+                                if (place.latitude == null) Text("좌표 미등록 · 수정에서 위치를 지정해 주세요.", style = MaterialTheme.typography.bodySmall)
                                 val names = current.links.filter { it.placeId == place.id }.mapNotNull { link -> current.elders.find { it.id == link.elderId }?.name }
                                 Text("연결 어르신: " + names.joinToString(", ").ifEmpty { "없음" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             PlaceCardActions(enabled = !busy, edit = {
                                 editing = true; showErrors = false
                                 drafts = listOf(PlaceDraft(place.id, place.name, "", place.latitude?.toString().orEmpty(), place.longitude?.toString().orEmpty(), current.links.filter { it.placeId == place.id }.map { it.elderId }.toSet()))
-                            }, delete = { deletePlace = place })
+                            }, delete = { deletePlace = place }, compact = true, horizontal = true)
                         }
                     } }
                 } else {

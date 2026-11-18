@@ -14,6 +14,45 @@ import org.junit.Test
 
 class TripScreenTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun bottomSheetScrollsGroupsHorizontallyAndKeepsStartVisible() {
+        val place = StopPlace("p", "가상 장소", "", 37.5, 127.0)
+        val elders = (1..8).map { Elder("e$it", "가상 어르신 $it") }
+        val state = mutableStateOf(CareData(places = listOf(place), elders = elders,
+            links = elders.map { PlaceElder(place.id, it.id) },
+            groups = elders.mapIndexed { index, elder -> ElderGroup("g$index", "${index + 1}차", listOf(elder.id)) }))
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
+            TripScreen(state.value, false, saveCrew = { _, done -> done() }) { state.value = it(state.value) }
+        } } }
+        compose.onNodeWithText("등원 운행 시작").performClick()
+        compose.onNodeWithText("0명으로 등원 시작").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("8차 · 1명").performScrollTo().performClick()
+        compose.onNodeWithText("8차 · 1명 선택됨").assertIsDisplayed()
+        compose.onNodeWithText("가상 어르신 8 어르신").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("1명으로 등원 시작").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("e8"), state.value.trips.single().targets.map { it.elderId })
+        }
+    }
+
+    @Test fun detailMenuRequiresConfirmationAndCancelPreservesRecord() {
+        val place = StopPlace("p", "가상 장소", "", 37.5, 127.0)
+        val trip = Trip("done", TripDirection.TO_CENTER,
+            listOf(TripTarget("e", "가상 어르신", place)), 1000, 2000)
+        val state = mutableStateOf(CareData(trips = listOf(trip)))
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
+            TripScreen(state.value, false, saveCrew = { _, done -> done() }) { state.value = it(state.value) }
+        } } }
+        compose.onNodeWithText("운행 내역").performClick()
+        compose.onNodeWithText("기록 0명 · 미기록 1명 · 종료").performClick()
+        compose.onNodeWithText("어르신별 도착 시간").assertExists()
+        compose.onNodeWithContentDescription("가상 어르신 기록 메뉴").performClick()
+        compose.onNodeWithText("이 기록 삭제").performClick()
+        compose.onNodeWithText("운행 기록을 삭제할까요?").assertExists()
+        compose.runOnIdle { assertEquals(listOf(trip), state.value.trips) }
+        compose.onNodeWithText("취소").performClick()
+        compose.onNodeWithText("어르신별 도착 시간").assertExists()
+        compose.runOnIdle { assertEquals(listOf(trip), state.value.trips) }
+    }
     @Test fun historyDeletionRequiresConfirmationAndCancelPreservesData() {
         val p = StopPlace("p", "장소", "", 37.5, 127.0)
         val trip = Trip("done", TripDirection.TO_CENTER,
@@ -46,9 +85,9 @@ class TripScreenTest {
         } } }
         compose.onNodeWithText("운행 내역").performClick()
         compose.onNodeWithText("기록 0명 · 미기록 3명 · 종료").performScrollTo().performClick()
-        compose.onNodeWithText("1. 가상가").assertExists()
-        compose.onNodeWithText("2. 가상나").assertExists()
-        compose.onNodeWithText("3. 가상다").assertExists()
+        compose.onNodeWithText("가상가").assertExists()
+        compose.onNodeWithText("가상나").assertExists()
+        compose.onNodeWithText("가상다").assertExists()
         compose.runOnIdle { assertEquals(targets, state.value.trips.single().targets) }
     }
 
